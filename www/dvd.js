@@ -1,3 +1,64 @@
+class DVDSimulation {
+    constructor({
+        initX,
+        initY,
+        initXDir,
+        initYDir,
+        cvWidth,
+        cvHeight,
+        logoWidth,
+        logoHeight
+    }) {
+        this.xPeriod = (cvWidth - logoWidth) - 1;
+        this.yPeriod = (cvHeight - logoHeight) - 1;
+
+        if (initXDir > 0) {
+            this.initX = initX;
+            this.xMod = 1;
+        } else {
+            // Starting left is equivalent to mirroring the simulation
+            // horizontally
+            this.initX = this.xPeriod - initX;
+            this.xMod = 0;
+        }
+
+        if (initYDir > 0) {
+            this.initY = initY;
+            this.yMod = 1;
+        } else {
+            // Starting up is equivalent to mirroring the simulation
+            // vertically
+            this.initY = this.yPeriod - initY;
+            this.yMod = 0;
+        }
+    }
+
+    calcPosition(frame) {
+        let xFrame = this.initX + frame;
+        let yFrame = this.initY + frame;
+
+        let x = xFrame % this.xPeriod;
+        if (Math.floor(xFrame / this.xPeriod) % 2 === this.xMod) {
+            x = this.xPeriod - x;
+        }
+
+        let y = yFrame % this.yPeriod;
+        if (Math.floor(yFrame / this.yPeriod) % 2 === this.yMod) {
+            y = this.yPeriod - y;
+        }
+
+        let hitX = (x === 0 || x === this.xPeriod);
+        let hitY = (y === 0 || y === this.yPeriod);
+
+        return {
+            x,
+            y,
+            hitWall: hitX || hitY,
+            hitCorner: hitX && hitY
+        };
+    }
+}
+
 class DVDLogoApp {
     constructor(canvas) {
         this.canvas = canvas;
@@ -5,15 +66,10 @@ class DVDLogoApp {
 
         this.logos = [];
         this.logoIdx = 0;
-        this.x = 0;
-        this.y = 0;
-        this.xdir = 1;
-        this.ydir = 1;
-        this.speed = 1;
+        // TODO: 720x480?
         this.width = 640;
         this.height = 400;
         this.frames = 0;
-        this.lagFrames = 0;
         this.cornerHitFrames = 0;
         this.interval = null;
 
@@ -46,7 +102,9 @@ class DVDLogoApp {
         this.ctx.scale(this.xscale, this.yscale);
         this.ctx.fillStyle = '#000000';
         this.ctx.fillRect(0, 0, this.width, this.height);
-        this.ctx.drawImage(this.logos[this.logoIdx], this.x, this.y);
+
+        let { x, y } = this.sim.calcPosition(this.frames);
+        this.ctx.drawImage(this.logos[this.logoIdx], x, y);
     }
 
     calcScale() {
@@ -57,8 +115,17 @@ class DVDLogoApp {
     }
 
     nextFrame() {
-        for (let i = 0; i < this.speed; i++)
-            this.stepSimulation();
+        let shouldSwitchLogo = false;
+        let shouldCorner = false;
+        for (let i = 0; i < this.speed; i++) {
+            this.frames++; // TODO: check wall/corner hits here
+            let { hitWall, hitCorner } = this.sim.calcPosition(this.frames);
+            shouldSwitchLogo = shouldSwitchLogo || hitWall;
+            shouldCorner = shouldCorner || hitCorner;
+        }
+
+        if (shouldSwitchLogo) this.nextLogo();
+        if (shouldCorner) this.hitCorner();
         this.draw();
     }
 
@@ -66,41 +133,12 @@ class DVDLogoApp {
         this.logoIdx = (this.logoIdx + 1) % this.logos.length;
     }
 
-    stepSimulation() {
-        if (this.lagFrames > 0) {
-            this.lagFrames--;
-            return;
-        }
-
-        this.frames++;
-        this.x += this.xdir;
-        this.y += this.ydir;
-
-        let hitx = false;
-        let hity = false;
-
-        if (this.x === 0) { this.xdir = 1; hitx = true; }
-        if (this.x + this.logos[0].width === this.width - 1) { this.xdir = -1; hitx = true; }
-        if (this.y === 0) { this.ydir = 1; hity = true; }
-        if (this.y + this.logos[0].height === this.height - 1) { this.ydir = -1; hity = true; }
-
-        if (hitx || hity)
-            this.nextLogo();
-        if (hitx && hity)
-            this.hitCorner();
-    }
-
     hitCorner() {
         this.cornerHitFrames = 90;
     }
 
     syncFrameCount(n) {
-        // TODO: smooth this out?
-        while (this.frames < n) {
-            this.stepSimulation();
-        }
-
-        this.lagFrames = this.frames - n;
+        this.frames = n;
     }
 
     run({
@@ -116,6 +154,16 @@ class DVDLogoApp {
         this.xdir = initXDir;
         this.ydir = initYDir;
         this.speed = speed;
+        this.sim = new DVDSimulation({
+            initX,
+            initY,
+            initXDir,
+            initYDir,
+            cvWidth: this.width,
+            cvHeight: this.height,
+            logoWidth: this.logos[0].width,
+            logoHeight: this.logos[0].height,
+        });
 
         // TODO: probably should use requestAnimationFrame for drawing
         this.interval = setInterval(() => {
