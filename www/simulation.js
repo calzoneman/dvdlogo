@@ -123,15 +123,15 @@ class DVDSimulation {
             /**
              * Invert the x axis every other wall hit
              */
-            x = this.xPeriod - x;
+            x = this.width - x;
         }
 
         let y = yDist % this.height;
-        if (yWallHits % 2 === this.yMod) {
+        if (yWallHits % 2 === this.yFlip) {
             /**
              * Invert the y axis every other wall hit
              */
-            y = this.yPeriod - y;
+            y = this.height - y;
         }
 
         let cornersHit = 0;
@@ -149,4 +149,140 @@ class DVDSimulation {
             cornersHit
         };
     }
+}
+
+class DVDLogoApp {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+
+        this.logos = [];
+        this.width = 640;
+        this.height = 360;
+        this.ticks = 0;
+        this.interval = null;
+
+        this.canvas.width = this.canvas.clientWidth;
+        this.canvas.height = this.canvas.clientHeight;
+
+        const { xScale, yScale } = this.calcScale();
+        this.xScale = xScale;
+        this.yScale = yScale;
+    }
+
+    async loadLogos(logoCount) {
+        this.logos = [];
+
+        for (let i = 0; i < logoCount; i++) {
+            const img = await loadLogo(`logos/${i}.svg`);
+            this.logos.push(img);
+        }
+    }
+
+    draw({ x, y, logoIndex }) {
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.ctx.scale(this.xScale, this.yScale);
+        this.ctx.fillStyle = '#000000';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        this.ctx.drawImage(this.logos[logoIndex], x, y);
+    }
+
+    calcScale() {
+        return {
+            xScale: this.canvas.clientWidth / this.width,
+            yScale: this.canvas.clientHeight / this.height
+        };
+    }
+
+    nextFrame() {
+        for (let i = 0; i < this.speed; i++) {
+            this.ticks++;
+        }
+
+        let {
+            x,
+            y,
+            wallsHit,
+            /* cornersHit */
+        } = this.sim.simulate(this.ticks);
+
+        this.draw({
+            x,
+            y,
+            logoIndex: wallsHit % this.logos.length
+        });
+    }
+
+    seekNearFirstCornerForTesting() {
+        this.ticks = this.sim.firstCorner - 200;
+    }
+
+    run({
+        seed,
+        speed = 1,
+        fps = 30
+    }) {
+        this.sim = this.initSim(seed);
+        this.speed = speed;
+
+        this.interval = setInterval(() => {
+            this.nextFrame();
+        }, 1_000 / fps);
+    }
+
+    initSim(seed) {
+        let hashCode = hash(seed);
+
+        let xReversed = hashCode >> 31;
+        let yReversed = hashCode >> 30 & 1;
+
+        let xInit = hashCode >> 15 & 0x7FFF;
+        xInit = xInit % (this.width - this.logos[0].width);
+        let xDirInit = xReversed ? -1 : 1;
+
+        let yInit = hashCode & 0x7FFF;
+        yInit = yInit % (this.height - this.logos[0].height);
+        let yDirInit = yReversed ? -1 : 1;
+
+        return new DVDSimulation({
+            xInit,
+            yInit,
+            xDirInit,
+            yDirInit,
+            cvWidth: this.width,
+            cvHeight: this.height,
+            logoWidth: this.logos[0].width,
+            logoHeight: this.logos[0].height,
+        });
+    }
+
+    stop() {
+        clearInterval(this.interval);
+        this.interval = null;
+    }
+}
+
+function loadLogo(path) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`Failed to load ${path}`));
+        img.src = path;
+    });
+}
+
+function hash(seed) {
+    seed = String(seed);
+
+    let h = new Uint32Array([0]);
+    for (let i = 0; i < seed.length; i++) {
+        h[0] = (31 * h[0]) + seed.charCodeAt(i);
+    }
+
+    h[0] += 0x3243f6a8; h[0] ^= h[0] >> 15;
+    h[0] *= 0xd168aaad; h[0] ^= h[0] >> 15;
+    h[0] *= 0xaf723597; h[0] ^= h[0] >> 15;
+
+    return h;
 }
