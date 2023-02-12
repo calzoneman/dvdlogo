@@ -2,9 +2,7 @@ const { createServer } = require('node:http');
 const { createReadStream } = require('node:fs');
 const path = require('node:path');
 
-let ticks = 0;
-
-setInterval(() => ticks++, 1_000 / 30);
+const epoch = Date.now();
 
 function doStatic(req, res, pathname) {
     let contentType;
@@ -40,7 +38,7 @@ function doTimer(req, res) {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache'
     });
-    res.end(JSON.stringify({ ticks }));
+    res.end(JSON.stringify({ epoch, time: Date.now() }));
 }
 
 function do404(req, res) {

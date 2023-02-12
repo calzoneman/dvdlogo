@@ -152,22 +152,63 @@ class DVDSimulation {
 }
 
 class DVDLogoApp {
-    constructor(canvas) {
+    constructor({
+        canvas,
+        timerUrl,
+        logoCount,
+        seed,
+        speed
+    }) {
         this.canvas = canvas;
+        this.timerUrl = timerUrl;
+        this.logoCount = logoCount;
+        this.seed = seed;
+        this.speed = speed;
         this.ctx = canvas.getContext('2d');
 
         this.logos = [];
         this.width = 640;
         this.height = 360;
-        this.ticks = 0;
-        this.interval = null;
+        this.epoch = 0;
+        this.timeOffset = 0;
+        this.syncTimeout = null;
 
+        this.scaleCanvas();
+
+        window.addEventListener('resize', () => {
+            this.scaleCanvas();
+        });
+    }
+
+    scaleCanvas() {
         this.canvas.width = this.canvas.clientWidth;
         this.canvas.height = this.canvas.clientHeight;
 
         const { xScale, yScale } = this.calcScale();
         this.xScale = xScale;
         this.yScale = yScale;
+    }
+
+    async init() {
+        await this.loadLogos(this.logoCount);
+        this.sim = this.initSim(this.seed);
+        await this.updateTime();
+    }
+
+    async updateTime() {
+        let opts = {
+            cache: 'no-cache'
+        };
+
+        let res = await fetch(new Request(this.timerUrl, opts));
+        if (!res.ok) {
+            console.error(`[DVDLogoApp] Error fetching timer: ${res.status}`);
+            return;
+        }
+
+        let { epoch, time } = await res.json();
+        this.epoch = epoch;
+        this.timeOffset = time - Date.now();
     }
 
     async loadLogos(logoCount) {
@@ -184,7 +225,6 @@ class DVDLogoApp {
         this.ctx.scale(this.xScale, this.yScale);
         this.ctx.fillStyle = '#000000';
         this.ctx.fillRect(0, 0, this.width, this.height);
-
         this.ctx.drawImage(this.logos[logoIndex], x, y);
     }
 
@@ -196,39 +236,28 @@ class DVDLogoApp {
     }
 
     nextFrame() {
-        for (let i = 0; i < this.speed; i++) {
-            this.ticks++;
-        }
+        let millis = Date.now() + this.timeOffset - this.epoch;
+        let ticks = Math.floor((millis / 1_000) * this.speed);
 
         let {
             x,
             y,
             wallsHit,
             /* cornersHit */
-        } = this.sim.simulate(this.ticks);
+        } = this.sim.simulate(ticks);
 
         this.draw({
             x,
             y,
             logoIndex: wallsHit % this.logos.length
         });
+
+        window.requestAnimationFrame((_t) => this.nextFrame());
     }
 
-    seekNearFirstCornerForTesting() {
-        this.ticks = this.sim.firstCorner - 200;
-    }
-
-    run({
-        seed,
-        speed = 1,
-        fps = 30
-    }) {
-        this.sim = this.initSim(seed);
-        this.speed = speed;
-
-        this.interval = setInterval(() => {
-            this.nextFrame();
-        }, 1_000 / fps);
+    start() {
+        window.requestAnimationFrame((_t) => this.nextFrame());
+        this.startSyncTimer();
     }
 
     initSim(seed) {
@@ -257,9 +286,15 @@ class DVDLogoApp {
         });
     }
 
-    stop() {
-        clearInterval(this.interval);
-        this.interval = null;
+    startSyncTimer() {
+        setTimeout(() => {
+            this.updateTime()
+                .catch(error => {
+                    console.error(`[DVDLogoApp] Time sync failed: ${error}`);
+                }).then(() => {
+                    this.startSyncTimer();
+                });
+        }, 20_000 + (5_000 * Math.random()));
     }
 }
 

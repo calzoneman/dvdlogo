@@ -25,20 +25,20 @@
       let params = new URLSearchParams(document.location.search);
       let seed = params.get('seed') || 'default';
 
-      let app = new DVDLogoApp(
-        document.getElementById('dvd-display')
-      );
+      let app = new DVDLogoApp({
+        canvas: document.getElementById('dvd-display'),
+        timerUrl: `${document.location.protocol}//${document.location.host}/timer`,
+        logoCount: 7,
+        seed,
+        speed: 60
+      });
 
-      app.loadLogos(7).then(() => {
-        app.run({
-          seed,
-          speed: 2
-        });
-        app.seekNearFirstCornerForTesting();
+      app.init().then(() => {
+        app.start();
       }).catch(error => {
         let canvas = document.getElementById('dvd-display');
         let result = document.createElement('pre');
-        result.textContent = `Error initializing simulation: ${error.stack}`;
+        result.textContent = `Error initializing DVDLogoApp: ${error.stack}`;
         document.body.insertBefore(result, canvas);
         document.body.removeChild(canvas);
       });
