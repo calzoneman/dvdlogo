@@ -83,8 +83,15 @@ function getIP(req) {
 let server = createServer((req, res) => {
     let url = new URL(req.url, `http://${req.headers.host}`);
     let pathname = url.pathname;
+    let logpath = pathname;
+    if (pathname === '/index.html' || pathname === '/') {
+        let seed = url.searchParams.get('seed');
+        if (seed !== null) {
+            logpath += `?seed=${seed}`;
+        }
+    }
 
-    console.log(`${new Date().toISOString()} ${getIP(req)} ${req.method} ${pathname}`);
+    console.log(`${new Date().toISOString()} ${getIP(req)} ${req.method} ${logpath}`);
 
     if (req.method !== 'GET') {
         res.writeHead(405, { 'Content-Type': 'text/plain' });
