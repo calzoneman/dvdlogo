@@ -1,6 +1,8 @@
 const { createServer } = require('node:http');
-const { createReadStream } = require('node:fs');
+const fs = require('node:fs');
+const { createReadStream, access } = fs;
 const path = require('node:path');
+const { isIP } = require('node:net');
 
 const epoch = Date.now();
 
@@ -24,13 +26,27 @@ function doStatic(req, res, pathname) {
             break;
     }
 
-    res.writeHead(200, {
-        'Content-Type': contentType,
-        'Cache-Control': 'max-age=3600'
-    });
+    access(filename, fs.constants.R_OK, (error) => {
+        if (error !== null) {
+            if (error.code === 'ENOENT') {
+                do404(req, res);
+            } else {
+                do500(req, res);
+            }
+        } else {
+            res.writeHead(200, {
+                'Content-Type': contentType,
+                'Cache-Control': 'max-age=3600'
+            });
 
-    let reader = createReadStream(filename);
-    reader.pipe(res);
+            let reader = createReadStream(filename);
+            reader.on('error', (error) => {
+                console.log(`Error sending ${filename}: ${error}`);
+                res.end();
+            });
+            reader.pipe(res);
+        }
+    });
 }
 
 function doTimer(req, res) {
@@ -46,11 +62,29 @@ function do404(req, res) {
     res.end('Not found');
 }
 
+function do500(req, res) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Internal server error');
+}
+
+function getIP(req) {
+    let ip = req.socket.remoteAddress;
+    let fwd = req.headers['x-forwarded-for'];
+    if (typeof fwd === 'string') {
+        fwd = fwd.trim();
+    }
+    if (isIP(fwd) && ip === '127.0.0.1') {
+        ip = fwd;
+    }
+
+    return ip;
+}
+
 let server = createServer((req, res) => {
     let url = new URL(req.url, `http://${req.headers.host}`);
     let pathname = url.pathname;
 
-    console.log(`${new Date().toISOString()} ${req.socket.remoteAddress} ${req.method} ${pathname}`);
+    console.log(`${new Date().toISOString()} ${getIP(req)} ${req.method} ${pathname}`);
 
     if (req.method !== 'GET') {
         res.writeHead(405, { 'Content-Type': 'text/plain' });
